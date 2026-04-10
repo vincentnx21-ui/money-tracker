@@ -1,32 +1,82 @@
 import streamlit as st
-import pandas as pd
+from openpyxl import Workbook, load_workbook
 from datetime import datetime
 import os
+import pandas as pd
 
-# --- 1. CONFIG & SETUP ---
-USER_FILE = "users.csv"
-LOG_FILE = "money_tracker.csv"
-SUPER_USER = "Vincent21"
-SUPER_PASS = "3123"
+FILE_NAME = "money_tracker.xlsx"
 
-# Standard columns for the whole system
-LOG_COLS = ["Date", "User", "Location", "Stall", "Product", "Extras", "Price", "Extra_Price", "Total", "Wallet_Left", "Type", "Note"]
+# Create file if not exists
+if not os.path.exists(FILE_NAME):
+    wb = Workbook()
 
-st.set_page_config(page_title="Finance & Canteen System", layout="wide")
+    ws1 = wb.active
+    ws1.title = "Daily_Expenses"
+    ws1.append(["Date", "Item", "Quantity", "Price", "Total", "Money Left"])
 
-# --- 2. DATA ENGINE ---
-def load_data(file, default_cols):
-    if os.path.exists(file):
-        try:
-            df = pd.read_csv(file, dtype=str)
-            # Repair logic: adds missing columns if the CSV is old
-            for col in default_cols:
-                if col not in df.columns:
-                    df[col] = "0" if "Price" in col or "Total" in col else "N/A"
-            return df
-        except:
-            return pd.DataFrame(columns=default_cols)
-    return pd.DataFrame(columns=default_cols)
+    ws2 = wb.create_sheet(title="Summary")
+    ws2["A1"] = "Total Spent"
+    ws2["A2"] = "Wallet Balance"
 
-user_df = load_data(USER_FILE, ["Username", "Password"])
-log_
+    wb.save(FILE_NAME)
+
+# Load workbook
+wb = load_workbook(FILE_NAME)
+ws1 = wb["Daily_Expenses"]
+ws2 = wb["Summary"]
+
+st.title("💰 Money Tracker")
+
+# --- USER INPUT ---
+item = st.text_input("Item")
+quantity = st.number_input("Quantity", min_value=1, step=1)
+price = st.number_input("Price per item", min_value=0.0, step=0.1)
+wallet = st.number_input("Current wallet money", min_value=0.0, step=1.0)
+
+if st.button("Add Expense"):
+    date = datetime.now().strftime("%Y-%m-%d")
+    total = quantity * price
+
+    # Get last money left
+    last_row = ws1.max_row
+    if last_row > 1:
+        last_money_left = ws1.cell(row=last_row, column=6).value
+        if last_money_left is None:
+            last_money_left = wallet
+    else:
+        last_money_left = wallet
+
+    money_left = last_money_left - total
+
+    # Save entry
+    ws1.append([date, item, quantity, price, total, money_left])
+
+    # Calculate total spent
+    total_spent = 0
+    for row in ws1.iter_rows(min_row=2, values_only=True):
+        if row[4] is not None:
+            total_spent += row[4]
+
+    # Update summary
+    ws2["B1"] = total_spent
+    ws2["B2"] = money_left
+
+    wb.save(FILE_NAME)
+
+    st.success("Expense added!")
+
+# --- DISPLAY DATA ---
+data = ws1.values
+columns = next(data)
+df = pd.DataFrame(data, columns=columns)
+
+st.subheader("📊 Daily Expenses")
+st.dataframe(df)
+
+# --- SUMMARY ---
+total_spent = ws2["B1"].value
+money_left = ws2["B2"].value
+
+st.subheader("📈 Summary")
+st.write(f"Total Spent: ${total_spent}")
+st.write(f"Money Left: ${money_left}")
