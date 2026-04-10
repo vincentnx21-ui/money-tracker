@@ -19,14 +19,12 @@ def load_data(file, default_cols):
     if os.path.exists(file):
         try:
             df = pd.read_csv(file, dtype=str)
-            # CHECK EVERY COLUMN
             for col in default_cols:
                 if col not in df.columns:
-                    # If it's a price field, set it to "0", otherwise "N/A"
+                    # If price or total columns are missing, start them at "0"
                     df[col] = "0" if "Price" in col or "Total" in col else "N/A"
             return df
-        except: 
-            return pd.DataFrame(columns=default_cols)
+        except: return pd.DataFrame(columns=default_cols)
     return pd.DataFrame(columns=default_cols)
 
 user_df = load_data(USER_FILE, ["Username", "Password"])
@@ -91,10 +89,18 @@ elif choice == "🛒 Order Food":
             s_sel = st.selectbox("Pick Stall", menu_data[menu_data["Location"] == l_sel]["Stall"].unique())
             prods = menu_data[(menu_data["Location"] == l_sel) & (menu_data["Stall"] == s_sel)]
             p_sel = st.selectbox("Pick Product", prods["Product"].unique())
-        
+
         details = prods[prods["Product"] == p_sel].iloc[-1]
-        base_p = float(details['Price'])
-        extra_p = float(details.get('Extra_Price', 0))
+        
+        # FIX: Safe conversion for Base Price and Extra Price
+        base_p = float(details['Price']) if 'Price' in details else 0.0
+        
+        try:
+            # Use .get() to avoid the crash if the column is missing
+            extra_p = float(details.get('Extra_Price', 0))
+        except:
+            extra_p = 0.0
+            
         grand_total = base_p + extra_p
         
         with col2:
@@ -135,10 +141,33 @@ elif choice == "🤝 Lending":
 elif choice == "📊 History":
     st.subheader("Your Transaction History")
     st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
+    st.divider()
+        st.subheader("🗑️ Delete Transaction")
+        # Let the user pick a transaction by its index
+        if not user_log.empty:
+            target = st.selectbox("Select entry to remove:", user_log.index, 
+                                 format_func=lambda x: f"{user_log.loc[x, 'Date']} - {user_log.loc[x, 'Product']}")
+            
+            if st.button("Delete Selected"):
+                # Drop the row and update the CSV
+                new_df = log_df.drop(target)
+                new_df.to_csv(LOG_FILE, index=False)
+                st.success("Deleted! Refreshing...")
+                st.rerun()
 
 # --- ADMIN FEATURES ---
 elif choice == "🛠️ SUPERADMIN SPACE":
     t1, t2, t3 = st.tabs(["👥 Registered Users", "📈 Global Activity", "🍱 Set Canteen Menu"])
+st.write("---")
+        st.subheader("🗑️ Remove Menu Item")
+        m_items = log_df[log_df["Type"] == "MenuSetup"]
+        if not m_items.empty:
+            m_target = st.selectbox("Select food to remove:", m_items.index,
+                                   format_func=lambda x: f"{m_items.loc[x, 'Stall']} - {m_items.loc[x, 'Product']}")
+            if st.button("Delete Item from Canteen"):
+                new_log = log_df.drop(m_target)
+                new_log.to_csv(LOG_FILE, index=False)
+                st.rerun()
     
     with t1:
         st.write("### User Database (Plain Text Passwords)")
