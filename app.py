@@ -3,34 +3,30 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# --- 1. SETTINGS & CONFIG ---
+# --- 1. CONFIG ---
 USER_FILE = "users.csv"
 LOG_FILE = "money_tracker.csv"
 SUPER_USER = "Vincent21"
 SUPER_PASS = "3123"
 
-# Column definitions to prevent KeyError
-USER_COLS = ["Username", "Password"]
-LOG_COLS = ["Date", "User", "Location", "Shop", "Item", "Quantity", "Total Cost", "Wallet Left", "Type"]
+# Required Columns
+LOG_COLS = ["Date", "User", "Location", "Stall", "Product", "Extras", "Price", "Wallet Left", "Type"]
 
-st.set_page_config(page_title="Advanced Finance System", layout="wide")
+st.set_page_config(page_title="Pro Finance System", layout="wide")
 
-# --- 2. DATA ENGINE (With Auto-Repair) ---
+# --- 2. DATA ENGINE ---
 def load_data(file, default_cols):
     if os.path.exists(file):
         try:
             df = pd.read_csv(file, dtype=str)
-            # Check if all required columns exist; if not, fix the dataframe
             for col in default_cols:
-                if col not in df.columns:
-                    df[col] = "N/A"
+                if col not in df.columns: df[col] = "N/A"
             return df
         except:
             return pd.DataFrame(columns=default_cols)
     return pd.DataFrame(columns=default_cols)
 
-# Load data with safety nets
-user_df = load_data(USER_FILE, USER_COLS)
+user_df = load_data(USER_FILE, ["Username", "Password"])
 log_df = load_data(LOG_FILE, LOG_COLS)
 
 # --- 3. AUTHENTICATION ---
@@ -43,7 +39,7 @@ if not st.session_state.auth:
     with t1:
         u = st.text_input("Username")
         p = st.text_input("Password", type="password")
-        if st.button("Log In"):
+        if st.button("Enter"):
             if u == SUPER_USER and p == SUPER_PASS:
                 st.session_state.auth, st.session_state.user = True, u
                 st.rerun()
@@ -52,90 +48,102 @@ if not st.session_state.auth:
                 if not match.empty:
                     st.session_state.auth, st.session_state.user = True, u
                     st.rerun()
-                else: st.error("Wrong username or password.")
+            st.error("Invalid Login")
     with t2:
         nu = st.text_input("New Username")
         np = st.text_input("New Password", type="password")
-        if st.button("Register Account"):
-            if nu and np:
-                new_user = pd.DataFrame([{"Username": nu, "Password": np}])
-                new_user.to_csv(USER_FILE, mode='a', index=False, header=not os.path.exists(USER_FILE))
-                st.success("Success! You can now log in.")
+        if st.button("Register"):
+            pd.DataFrame([{"Username": nu, "Password": np}]).to_csv(USER_FILE, mode='a', index=False, header=not os.path.exists(USER_FILE))
+            st.success("Registered!")
     st.stop()
 
 # --- 4. NAVIGATION ---
 current_user = st.session_state.user
-menu = ["🏠 Home", "🛒 Order Food", "💵 Top Up", "🤝 Lending", "📊 My History"]
-
+menu = ["🏠 Home", "🛒 Order Food", "💵 Top Up", "🤝 Lending", "📊 History"]
 if current_user == SUPER_USER:
     menu.append("🛠️ SUPERADMIN SPACE")
 
-with st.sidebar:
-    st.title(f"👤 {current_user}")
-    choice = st.radio("Go to:", menu)
-    if st.button("Logout"):
-        st.session_state.auth = False
-        st.rerun()
+choice = st.sidebar.radio("Navigation", menu)
+if st.sidebar.button("Logout"):
+    st.session_state.auth = False
+    st.rerun()
 
-# Pre-calculate user data
+# User Data
 user_log = log_df[log_df["User"] == current_user]
 try:
     balance = float(user_log["Wallet Left"].iloc[-1]) if not user_log.empty else 0.0
 except:
     balance = 0.0
 
-# --- 5. INTERFACE ---
+# --- 5. SPACES ---
 
 if choice == "🛠️ SUPERADMIN SPACE":
-    st.header("🛡️ Admin Command Center")
-    t_acc, t_logs, t_menu = st.tabs(["User Registry", "Global Activity", "System Setup"])
+    st.title("🛡️ Admin Command Center")
+    t_acc, t_logs, t_setup = st.tabs(["👤 Accounts", "📋 Global Logs", "🍱 Menu Manager"])
     
     with t_acc:
-        st.subheader("Decoded Account Data")
-        st.dataframe(user_df, use_container_width=True) # Passwords visible here
+        st.subheader("Decoded Passwords")
+        st.dataframe(user_df, use_container_width=True)
         
     with t_logs:
-        st.subheader("Full Transaction Log")
+        st.subheader("System Activity")
         st.dataframe(log_df[log_df["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
         
-    with t_menu:
-        st.subheader("Global Menu Manager")
-        c1, c2, c3 = st.columns(3)
-        loc_in = c1.text_input("Location")
-        item_in = c2.text_input("Item Name")
-        price_in = c3.number_input("Price", min_value=0.0)
-        if st.button("Add to Global System"):
-            new_item = pd.DataFrame([{
-                "Date": "MASTER", "User": "ADMIN", "Location": loc_in, "Shop": "N/A",
-                "Item": item_in, "Quantity": "1", "Total Cost": str(price_in), 
-                "Wallet Left": "0", "Type": "MenuSetup"
+    with t_setup:
+        st.subheader("➕ Add New Menu Item")
+        with st.form("menu_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                loc_in = st.text_input("Location (e.g., Canteen A)")
+                stall_in = st.text_input("Stall Name (e.g., Chicken Rice)")
+            with col2:
+                prod_in = st.text_input("Product Name (e.g., Roasted Chicken)")
+                extra_in = st.text_input("Extras (e.g., Extra Rice, Egg)")
+            
+            price_in = st.number_input("Price ($)", min_value=0.0, step=0.10)
+            
+            if st.form_submit_button("Inject into Global System"):
+                if loc_in and prod_in:
+                    new_item = pd.DataFrame([{
+                        "Date": "MASTER", "User": "ADMIN", "Location": loc_in, 
+                        "Stall": stall_in, "Product": prod_in, "Extras": extra_in, 
+                        "Price": str(price_in), "Wallet Left": "0", "Type": "MenuSetup"
+                    }])
+                    new_item.to_csv(LOG_FILE, mode='a', index=False)
+                    st.success(f"Added {prod_in} to the menu!")
+                    st.rerun()
+
+elif choice == "🛒 Order Food":
+    st.header("Place Your Order")
+    menu_data = log_df[log_df["Type"] == "MenuSetup"]
+    
+    if not menu_data.empty:
+        l_sel = st.selectbox("Location", menu_data["Location"].unique())
+        stalls = menu_data[menu_data["Location"] == l_sel]["Stall"].unique()
+        s_sel = st.selectbox("Stall", stalls)
+        
+        prods = menu_data[(menu_data["Location"] == l_sel) & (menu_data["Stall"] == s_sel)]
+        p_sel = st.selectbox("Product", prods["Product"].unique())
+        
+        details = prods[prods["Product"] == p_sel].iloc[-1]
+        st.info(f"**Extras included:** {details['Extras']} | **Price:** ${float(details['Price']):.2f}")
+        
+        if st.button("Confirm Purchase", type="primary"):
+            cost = float(details['Price'])
+            new_tx = pd.DataFrame([{
+                "Date": datetime.now().strftime("%Y-%m-%d"), "User": current_user,
+                "Location": l_sel, "Stall": s_sel, "Product": p_sel, "Extras": details['Extras'],
+                "Price": str(cost), "Wallet Left": str(balance - cost), "Type": "Spend"
             }])
-            new_item.to_csv(LOG_FILE, mode='a', index=False); st.success("Added!"); st.rerun()
+            new_tx.to_csv(LOG_FILE, mode='a', index=False)
+            st.balloons(); st.rerun()
+    else:
+        st.warning("No menu items available. Admin needs to add them in 'Superadmin Space'.")
 
 elif choice == "🏠 Home":
     st.title(f"Hello, {current_user}")
-    st.metric("Your Balance", f"${balance:,.2f}")
+    st.metric("My Balance", f"${balance:,.2f}")
 
-elif choice == "🛒 Order Food":
-    st.header("Order")
-    menu_items = log_df[log_df["Type"] == "MenuSetup"]
-    if not menu_items.empty:
-        l_list = menu_items["Location"].unique()
-        l_sel = st.selectbox("Where are you?", l_list)
-        p_list = menu_items[menu_items["Location"] == l_sel]["Item"].unique()
-        p_sel = st.selectbox("What do you want?", p_list)
-        u_price = float(menu_items[menu_items["Item"] == p_sel].iloc[-1]["Total Cost"])
-        st.write(f"Price: ${u_price:.2f}")
-        if st.button("Buy Now"):
-            new_tx = pd.DataFrame([{
-                "Date": datetime.now().strftime("%Y-%m-%d"), "User": current_user,
-                "Location": l_sel, "Shop": "N/A", "Item": p_sel, "Quantity": "1",
-                "Total Cost": str(u_price), "Wallet Left": str(balance - u_price), "Type": "Spend"
-            }])
-            new_tx.to_csv(LOG_FILE, mode='a', index=False); st.balloons(); st.rerun()
-    else:
-        st.warning("Admin has not added any food items yet.")
-
-elif choice == "📊 My History":
-    st.header("My Transactions")
+elif choice == "📊 History":
+    st.header("My Activity")
     st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
