@@ -2,164 +2,236 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
+import hashlib
 
-# --- CONFIG ---
-USER_FILE = "users.csv"
-LOG_FILE = "money_tracker.csv"
-
-SUPER_USER = "Vincent21"
-SUPER_PASS = "3123"
-
-LOG_COLS = [
-    "Date", "User", "Location", "Stall", "Product",
-    "Extras", "Price", "Extra_Price", "Total",
-    "Wallet_Left", "Type", "Note"
-]
-
+# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Finance & Canteen System", layout="wide")
 
-# --- DATA FUNCTIONS ---
+FILES = {
+    "users": "users.csv",
+    "transactions": "transactions.csv",
+    "menu": "menu.csv",
+    "extras": "extras.csv",
+    "lending": "lending.csv"
+}
+
+SUPER_USER = "admin"
+SUPER_PASS = "admin123"
+
+# ---------------- HELPERS ----------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
 def load_data(file, columns):
     if os.path.exists(file):
         try:
-            df = pd.read_csv(file)
-            for col in columns:
-                if col not in df.columns:
-                    df[col] = None
-            return df
-        except Exception as e:
-            st.error(f"Error loading {file}: {e}")
+            df = pd.read_csv(file, on_bad_lines='skip')
+            return df.reindex(columns=columns)
+        except:
             return pd.DataFrame(columns=columns)
     return pd.DataFrame(columns=columns)
 
 def save_data(df, file):
     df.to_csv(file, index=False)
 
-# Load data
-user_df = load_data(USER_FILE, ["Username", "Password"])
-log_df = load_data(LOG_FILE, LOG_COLS)
+# ---------------- LOAD DATA ----------------
+users = load_data(FILES["users"], ["Username", "Password"])
+transactions = load_data(FILES["transactions"], ["Date","User","Type","Amount","Details","Wallet"])
+menu = load_data(FILES["menu"], ["Location","Stall","Product","Price"])
+extras = load_data(FILES["extras"], ["Extra","Price"])
+lending = load_data(FILES["lending"], ["Date","User","Person","Amount","Note","Repaid"])
 
-# --- SESSION STATE ---
+# ---------------- SESSION ----------------
 if "auth" not in st.session_state:
     st.session_state.auth = False
     st.session_state.user = None
     st.session_state.wallet = 0.0
 
-# --- AUTH SYSTEM ---
+# ---------------- LOGIN / REGISTER ----------------
 if not st.session_state.auth:
-    tab1, tab2 = st.tabs(["🔒 Login", "📝 Register"])
+    tab1, tab2 = st.tabs(["Login", "Register"])
 
-    # LOGIN
     with tab1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
 
         if st.button("Login"):
-            valid_user = (
-                (username == SUPER_USER and password == SUPER_PASS) or
-                ((user_df["Username"] == username) & (user_df["Password"] == password)).any()
+            hp = hash_password(p)
+
+            valid = (
+                (u == SUPER_USER and p == SUPER_PASS) or
+                ((users["Username"] == u) & (users["Password"] == hp)).any()
             )
 
-            if valid_user:
+            if valid:
                 st.session_state.auth = True
-                st.session_state.user = username
-                st.success("Logged in!")
+                st.session_state.user = u
+
+                user_tx = transactions[transactions["User"] == u]
+                if not user_tx.empty:
+                    st.session_state.wallet = float(user_tx.iloc[-1]["Wallet"])
+
                 st.rerun()
             else:
-                st.error("Invalid username or password")
+                st.error("Invalid login")
 
-    # REGISTER
     with tab2:
-        new_user = st.text_input("New Username")
-        new_pass = st.text_input("New Password", type="password")
+        nu = st.text_input("New Username")
+        np = st.text_input("New Password", type="password")
 
         if st.button("Register"):
-            if new_user in user_df["Username"].values:
-                st.warning("User already exists")
-            elif new_user and new_pass:
-                new_row = pd.DataFrame([[new_user, new_pass]], columns=["Username", "Password"])
-                user_df = pd.concat([user_df, new_row], ignore_index=True)
-                save_data(user_df, USER_FILE)
-                st.success("Account created! Go login.")
+            if nu in users["Username"].values:
+                st.warning("User exists")
+            elif nu and np:
+                new = pd.DataFrame([[nu, hash_password(np)]], columns=["Username","Password"])
+                users = pd.concat([users, new], ignore_index=True)
+                save_data(users, FILES["users"])
+                st.success("Registered!")
             else:
                 st.warning("Fill all fields")
 
-# --- MAIN APP ---
+# ---------------- MAIN APP ----------------
 else:
     st.title("💰 Finance & Canteen System")
 
-    st.sidebar.write(f"👤 Logged in as: {st.session_state.user}")
+    st.sidebar.write(f"👤 {st.session_state.user}")
 
-    # Wallet input
-    st.sidebar.subheader("💵 Wallet")
-    st.session_state.wallet = st.sidebar.number_input(
-        "Enter current wallet",
-        min_value=0.0,
-        value=float(st.session_state.wallet)
-    )
+    # Wallet display
+    st.sidebar.metric("Wallet", f"${st.session_state.wallet:.2f}")
 
-    # --- INPUT FORM ---
-    st.subheader("🧾 Add Transaction")
+    menu_tab, topup_tab, lend_tab, history_tab = st.tabs(["🍽 Order", "💵 Top-up", "🤝 Lending", "📜 History"])
 
-    col1, col2 = st.columns(2)
+    # ---------------- ORDER ----------------
+    with menu_tab:
+        st.subheader("Order Food")
 
-    with col1:
-        location = st.text_input("Location")
-        stall = st.text_input("Stall")
-        product = st.text_input("Product")
+        if not menu.empty:
+            location = st.selectbox("Location", menu["Location"].dropna().unique())
 
-    with col2:
-        extras = st.text_input("Extras")
-        price = st.number_input("Price", min_value=0.0)
-        extra_price = st.number_input("Extra Price", min_value=0.0)
+            stall = st.selectbox(
+                "Stall",
+                menu[menu["Location"] == location]["Stall"].dropna().unique()
+            )
 
-    trans_type = st.selectbox("Type", ["Expense", "Top-up"])
-    note = st.text_input("Note")
+            products = menu[(menu["Location"] == location) & (menu["Stall"] == stall)]
+            product = st.selectbox("Product", products["Product"])
 
-    if st.button("Add Transaction"):
-        total = price + extra_price
-
-        if trans_type == "Expense":
-            st.session_state.wallet -= total
+            price = float(products[products["Product"] == product]["Price"].values[0])
         else:
-            st.session_state.wallet += total
+            st.warning("No menu available")
+            price = 0
 
-        new_entry = pd.DataFrame([[
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            st.session_state.user,
-            location,
-            stall,
-            product,
-            extras,
-            price,
-            extra_price,
-            total,
-            st.session_state.wallet,
-            trans_type,
-            note
-        ]], columns=LOG_COLS)
+        st.write(f"Base Price: ${price}")
 
-        log_df = pd.concat([log_df, new_entry], ignore_index=True)
-        save_data(log_df, LOG_FILE)
+        # Extras
+        if not extras.empty:
+            extra_selected = st.multiselect("Extras", extras["Extra"])
+            extra_price = extras[extras["Extra"].isin(extra_selected)]["Price"].astype(float).sum()
+        else:
+            extra_selected = []
+            extra_price = 0
 
-        st.success("Transaction added!")
+        total = price + extra_price
+        st.subheader(f"Total: ${total:.2f}")
 
-    # --- DISPLAY DATA ---
-    st.subheader("📊 Transactions")
-    st.dataframe(log_df.tail(20), use_container_width=True)
+        if st.button("Confirm Order"):
+            st.session_state.wallet -= total
 
-    # --- SUMMARY ---
-    st.subheader("📈 Summary")
+            new_tx = pd.DataFrame([[
+                datetime.now(),
+                st.session_state.user,
+                "Expense",
+                total,
+                f"{product} + {', '.join(extra_selected)}",
+                st.session_state.wallet
+            ]], columns=transactions.columns)
 
-    total_spent = log_df[log_df["Type"] == "Expense"]["Total"].astype(float).sum()
-    total_topup = log_df[log_df["Type"] == "Top-up"]["Total"].astype(float).sum()
+            transactions = pd.concat([transactions, new_tx], ignore_index=True)
+            save_data(transactions, FILES["transactions"])
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("💸 Total Spent", f"${total_spent:.2f}")
-    col2.metric("💰 Total Top-up", f"${total_topup:.2f}")
-    col3.metric("🏦 Wallet", f"${st.session_state.wallet:.2f}")
+            st.success("Order saved!")
 
-    # --- LOGOUT ---
+    # ---------------- TOP-UP ----------------
+    with topup_tab:
+        amount = st.number_input("Top-up amount", min_value=0.0)
+
+        if st.button("Add Money"):
+            st.session_state.wallet += amount
+
+            new_tx = pd.DataFrame([[
+                datetime.now(),
+                st.session_state.user,
+                "Top-up",
+                amount,
+                "Top-up",
+                st.session_state.wallet
+            ]], columns=transactions.columns)
+
+            transactions = pd.concat([transactions, new_tx], ignore_index=True)
+            save_data(transactions, FILES["transactions"])
+
+            st.success("Money added!")
+
+    # ---------------- LENDING ----------------
+    with lend_tab:
+        person = st.text_input("Person Name")
+        amount = st.number_input("Amount", min_value=0.0)
+        note = st.text_input("Reminder")
+
+        if st.button("Lend"):
+            new_lend = pd.DataFrame([[
+                datetime.now(),
+                st.session_state.user,
+                person,
+                amount,
+                note,
+                "No"
+            ]], columns=lending.columns)
+
+            lending = pd.concat([lending, new_lend], ignore_index=True)
+            save_data(lending, FILES["lending"])
+
+            st.success("Lending recorded!")
+
+        st.dataframe(lending[lending["User"] == st.session_state.user])
+
+    # ---------------- HISTORY ----------------
+    with history_tab:
+        st.dataframe(transactions[transactions["User"] == st.session_state.user])
+
+    # ---------------- ADMIN PANEL ----------------
+    if st.session_state.user == SUPER_USER:
+        st.sidebar.subheader("🛠 Admin Panel")
+
+        if st.sidebar.checkbox("View Users"):
+            st.dataframe(users)
+
+        if st.sidebar.checkbox("View Transactions"):
+            st.dataframe(transactions)
+
+        if st.sidebar.checkbox("Edit Menu"):
+            loc = st.text_input("Location")
+            stall = st.text_input("Stall")
+            prod = st.text_input("Product")
+            price = st.number_input("Price", min_value=0.0)
+
+            if st.button("Add Menu Item"):
+                new = pd.DataFrame([[loc, stall, prod, price]], columns=menu.columns)
+                menu = pd.concat([menu, new], ignore_index=True)
+                save_data(menu, FILES["menu"])
+                st.success("Added!")
+
+        if st.sidebar.checkbox("Edit Extras"):
+            ex = st.text_input("Extra")
+            pr = st.number_input("Extra Price", min_value=0.0)
+
+            if st.button("Add Extra"):
+                new = pd.DataFrame([[ex, pr]], columns=extras.columns)
+                extras = pd.concat([extras, new], ignore_index=True)
+                save_data(extras, FILES["extras"])
+                st.success("Added!")
+
+    # Logout
     if st.sidebar.button("Logout"):
         st.session_state.auth = False
         st.session_state.user = None
