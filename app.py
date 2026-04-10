@@ -19,12 +19,14 @@ def load_data(file, default_cols):
     if os.path.exists(file):
         try:
             df = pd.read_csv(file, dtype=str)
+            # FORCE MISSING COLUMNS: This prevents the KeyError!
             for col in default_cols:
                 if col not in df.columns:
-                    # If price or total columns are missing, start them at "0"
-                    df[col] = "0" if "Price" in col or "Total" in col else "N/A"
+                    df[col] = "0" if "Price" in col else "N/A"
             return df
-        except: return pd.DataFrame(columns=default_cols)
+        except:
+            return pd.DataFrame(columns=default_cols)
+    # If file doesn't exist, create an empty one with correct headers
     return pd.DataFrame(columns=default_cols)
 
 user_df = load_data(USER_FILE, ["Username", "Password"])
