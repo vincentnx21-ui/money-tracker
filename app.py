@@ -1,82 +1,166 @@
 import streamlit as st
-from openpyxl import Workbook, load_workbook
+import pandas as pd
 from datetime import datetime
 import os
-import pandas as pd
 
-FILE_NAME = "money_tracker.xlsx"
+# --- CONFIG ---
+USER_FILE = "users.csv"
+LOG_FILE = "money_tracker.csv"
 
-# Create file if not exists
-if not os.path.exists(FILE_NAME):
-    wb = Workbook()
+SUPER_USER = "Vincent21"
+SUPER_PASS = "3123"
 
-    ws1 = wb.active
-    ws1.title = "Daily_Expenses"
-    ws1.append(["Date", "Item", "Quantity", "Price", "Total", "Money Left"])
+LOG_COLS = [
+    "Date", "User", "Location", "Stall", "Product",
+    "Extras", "Price", "Extra_Price", "Total",
+    "Wallet_Left", "Type", "Note"
+]
 
-    ws2 = wb.create_sheet(title="Summary")
-    ws2["A1"] = "Total Spent"
-    ws2["A2"] = "Wallet Balance"
+st.set_page_config(page_title="Finance & Canteen System", layout="wide")
 
-    wb.save(FILE_NAME)
+# --- DATA FUNCTIONS ---
+def load_data(file, columns):
+    if os.path.exists(file):
+        try:
+            df = pd.read_csv(file)
+            for col in columns:
+                if col not in df.columns:
+                    df[col] = None
+            return df
+        except Exception as e:
+            st.error(f"Error loading {file}: {e}")
+            return pd.DataFrame(columns=columns)
+    return pd.DataFrame(columns=columns)
 
-# Load workbook
-wb = load_workbook(FILE_NAME)
-ws1 = wb["Daily_Expenses"]
-ws2 = wb["Summary"]
+def save_data(df, file):
+    df.to_csv(file, index=False)
 
-st.title("💰 Money Tracker")
+# Load data
+user_df = load_data(USER_FILE, ["Username", "Password"])
+log_df = load_data(LOG_FILE, LOG_COLS)
 
-# --- USER INPUT ---
-item = st.text_input("Item")
-quantity = st.number_input("Quantity", min_value=1, step=1)
-price = st.number_input("Price per item", min_value=0.0, step=0.1)
-wallet = st.number_input("Current wallet money", min_value=0.0, step=1.0)
+# --- SESSION STATE ---
+if "auth" not in st.session_state:
+    st.session_state.auth = False
+    st.session_state.user = None
+    st.session_state.wallet = 0.0
 
-if st.button("Add Expense"):
-    date = datetime.now().strftime("%Y-%m-%d")
-    total = quantity * price
+# --- AUTH SYSTEM ---
+if not st.session_state.auth:
+    tab1, tab2 = st.tabs(["🔒 Login", "📝 Register"])
 
-    # Get last money left
-    last_row = ws1.max_row
-    if last_row > 1:
-        last_money_left = ws1.cell(row=last_row, column=6).value
-        if last_money_left is None:
-            last_money_left = wallet
-    else:
-        last_money_left = wallet
+    # LOGIN
+    with tab1:
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
 
-    money_left = last_money_left - total
+        if st.button("Login"):
+            valid_user = (
+                (username == SUPER_USER and password == SUPER_PASS) or
+                ((user_df["Username"] == username) & (user_df["Password"] == password)).any()
+            )
 
-    # Save entry
-    ws1.append([date, item, quantity, price, total, money_left])
+            if valid_user:
+                st.session_state.auth = True
+                st.session_state.user = username
+                st.success("Logged in!")
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
 
-    # Calculate total spent
-    total_spent = 0
-    for row in ws1.iter_rows(min_row=2, values_only=True):
-        if row[4] is not None:
-            total_spent += row[4]
+    # REGISTER
+    with tab2:
+        new_user = st.text_input("New Username")
+        new_pass = st.text_input("New Password", type="password")
 
-    # Update summary
-    ws2["B1"] = total_spent
-    ws2["B2"] = money_left
+        if st.button("Register"):
+            if new_user in user_df["Username"].values:
+                st.warning("User already exists")
+            elif new_user and new_pass:
+                new_row = pd.DataFrame([[new_user, new_pass]], columns=["Username", "Password"])
+                user_df = pd.concat([user_df, new_row], ignore_index=True)
+                save_data(user_df, USER_FILE)
+                st.success("Account created! Go login.")
+            else:
+                st.warning("Fill all fields")
 
-    wb.save(FILE_NAME)
+# --- MAIN APP ---
+else:
+    st.title("💰 Finance & Canteen System")
 
-    st.success("Expense added!")
+    st.sidebar.write(f"👤 Logged in as: {st.session_state.user}")
 
-# --- DISPLAY DATA ---
-data = ws1.values
-columns = next(data)
-df = pd.DataFrame(data, columns=columns)
+    # Wallet input
+    st.sidebar.subheader("💵 Wallet")
+    st.session_state.wallet = st.sidebar.number_input(
+        "Enter current wallet",
+        min_value=0.0,
+        value=float(st.session_state.wallet)
+    )
 
-st.subheader("📊 Daily Expenses")
-st.dataframe(df)
+    # --- INPUT FORM ---
+    st.subheader("🧾 Add Transaction")
 
-# --- SUMMARY ---
-total_spent = ws2["B1"].value
-money_left = ws2["B2"].value
+    col1, col2 = st.columns(2)
 
-st.subheader("📈 Summary")
-st.write(f"Total Spent: ${total_spent}")
-st.write(f"Money Left: ${money_left}")
+    with col1:
+        location = st.text_input("Location")
+        stall = st.text_input("Stall")
+        product = st.text_input("Product")
+
+    with col2:
+        extras = st.text_input("Extras")
+        price = st.number_input("Price", min_value=0.0)
+        extra_price = st.number_input("Extra Price", min_value=0.0)
+
+    trans_type = st.selectbox("Type", ["Expense", "Top-up"])
+    note = st.text_input("Note")
+
+    if st.button("Add Transaction"):
+        total = price + extra_price
+
+        if trans_type == "Expense":
+            st.session_state.wallet -= total
+        else:
+            st.session_state.wallet += total
+
+        new_entry = pd.DataFrame([[
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            st.session_state.user,
+            location,
+            stall,
+            product,
+            extras,
+            price,
+            extra_price,
+            total,
+            st.session_state.wallet,
+            trans_type,
+            note
+        ]], columns=LOG_COLS)
+
+        log_df = pd.concat([log_df, new_entry], ignore_index=True)
+        save_data(log_df, LOG_FILE)
+
+        st.success("Transaction added!")
+
+    # --- DISPLAY DATA ---
+    st.subheader("📊 Transactions")
+    st.dataframe(log_df.tail(20), use_container_width=True)
+
+    # --- SUMMARY ---
+    st.subheader("📈 Summary")
+
+    total_spent = log_df[log_df["Type"] == "Expense"]["Total"].astype(float).sum()
+    total_topup = log_df[log_df["Type"] == "Top-up"]["Total"].astype(float).sum()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("💸 Total Spent", f"${total_spent:.2f}")
+    col2.metric("💰 Total Top-up", f"${total_topup:.2f}")
+    col3.metric("🏦 Wallet", f"${st.session_state.wallet:.2f}")
+
+    # --- LOGOUT ---
+    if st.sidebar.button("Logout"):
+        st.session_state.auth = False
+        st.session_state.user = None
+        st.rerun()
