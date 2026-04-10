@@ -48,13 +48,13 @@ if not st.session_state.auth:
                 if not match.empty:
                     st.session_state.auth, st.session_state.user = True, u
                     st.rerun()
-            st.error("Invalid Login")
+            st.error("Invalid Login Credentials")
     with t2:
         nu = st.text_input("New Username")
         np = st.text_input("New Password", type="password")
         if st.button("Register"):
             pd.DataFrame([{"Username": nu, "Password": np}]).to_csv(USER_FILE, mode='a', index=False, header=not os.path.exists(USER_FILE))
-            st.success("Registered!")
+            st.success("Registered successfully!")
     st.stop()
 
 # --- 4. NAVIGATION ---
@@ -64,6 +64,91 @@ if current_user == SUPER_USER:
     menu.append("🛠️ SUPERADMIN SPACE")
 
 choice = st.sidebar.radio("Navigation", menu)
+
+# --- 5. SHARED DATA LOGIC ---
+user_log = log_df[log_df["User"] == current_user]
+try:
+    balance = float(user_log["Wallet Left"].iloc[-1]) if not user_log.empty else 0.0
+except:
+    balance = 0.0
+
+if choice == "🏠 Home":
+    st.title(f"Welcome, {current_user}!")
+    st.metric("My Current Balance", f"${balance:,.2f}")
+elif choice == "💵 Top Up":
+    st.header("Wallet Top Up")
+    st.write("Add funds to your digital wallet.")
+    amount = st.number_input("Enter Amount ($)", min_value=0.0, step=1.0)
+    
+    if st.button("Confirm Deposit", type="primary"):
+        if amount > 0:
+            new_row = pd.DataFrame([{
+                "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "User": current_user,
+                "Location": "N/A", "Stall": "Wallet", "Product": "Deposit", "Extras": "N/A",
+                "Price": str(amount),
+                "Wallet Left": str(balance + amount),
+                "Type": "TopUp"
+            }])
+            new_row.to_csv(LOG_FILE, mode='a', index=False, header=not os.path.exists(LOG_FILE))
+            st.success(f"Added ${amount:.2f} to your account!")
+            st.rerun()
+
+elif choice == "🤝 Lending":
+    st.header("Money Lending")
+    st.write("Track money you have lent to others.")
+    friend_name = st.text_input("Friend's Name")
+    lend_amount = st.number_input("Amount Lent ($)", min_value=0.0, step=0.10)
+    
+    if st.button("Record Loan"):
+        if friend_name and lend_amount > 0:
+            if balance >= lend_amount:
+                new_row = pd.DataFrame([{
+                    "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "User": current_user,
+                    "Location": "Lending", "Stall": "N/A", 
+                    "Product": f"Lent to {friend_name}", "Extras": "N/A",
+                    "Price": str(lend_amount),
+                    "Wallet Left": str(balance - lend_amount),
+                    "Type": "Lend"
+                }])
+                new_row.to_csv(LOG_FILE, mode='a', index=False, header=not os.path.exists(LOG_FILE))
+                st.warning(f"Recorded ${lend_amount:.2f} lent to {friend_name}.")
+                st.rerun()
+            else:
+                st.error("Insufficient balance to lend this amount.")
+
+elif choice == "🛒 Order Food":
+    st.header("Canteen Ordering")
+    menu_items = log_df[log_df["Type"] == "MenuSetup"]
+    if not menu_items.empty:
+        l_sel = st.selectbox("Location", menu_items["Location"].unique())
+        s_sel = st.selectbox("Stall", menu_items[menu_items["Location"] == l_sel]["Stall"].unique())
+        prods = menu_items[(menu_items["Location"] == l_sel) & (menu_items["Stall"] == s_sel)]
+        p_sel = st.selectbox("Product", prods["Product"].unique())
+        
+        details = prods[prods["Product"] == p_sel].iloc[-1]
+        price = float(details['Price'])
+        st.info(f"**Includes:** {details['Extras']} | **Price:** ${price:.2f}")
+        
+        if st.button("Confirm Purchase"):
+            if balance >= price:
+                new_tx = pd.DataFrame([{
+                    "Date": datetime.now().strftime("%Y-%m-%d %H:%M"), "User": current_user,
+                    "Location": l_sel, "Stall": s_sel, "Product": p_sel, "Extras": details['Extras'],
+                    "Price": str(price), "Wallet Left": str(balance - price), "Type": "Spend"
+                }])
+                new_tx.to_csv(LOG_FILE, mode='a', index=False)
+                st.balloons(); st.rerun()
+            else:
+                st.error("Insufficient balance!")
+    else:
+        st.warning("Menu is empty. Admin must add items in Superadmin Space.")
+
+elif choice == "📊 History":
+    st.header("Transaction History")
+    st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
+
 if st.sidebar.button("Logout"):
     st.session_state.auth = False
     st.rerun()
@@ -139,11 +224,3 @@ elif choice == "🛒 Order Food":
             st.balloons(); st.rerun()
     else:
         st.warning("No menu items available. Admin needs to add them in 'Superadmin Space'.")
-
-elif choice == "🏠 Home":
-    st.title(f"Hello, {current_user}")
-    st.metric("My Balance", f"${balance:,.2f}")
-
-elif choice == "📊 History":
-    st.header("My Activity")
-    st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
