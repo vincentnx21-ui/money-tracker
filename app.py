@@ -145,11 +145,9 @@ elif choice == "📊 History":
     # Make sure these lines all start at the same vertical level
     if not user_log.empty:
         st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
-        
         st.divider()
-    st.subheader("🗑️ Delete Transaction") # <--- CHECK THIS LINE
-        
-        # This dropdown must also be indented inside the 'if'
+        st.subheader("🗑️ Delete Transaction")
+        # Line 153 starts here: it must line up perfectly with st.subheader
         target = st.selectbox("Select entry to remove:", user_log.index)
         
         if st.button("Delete Selected"):
