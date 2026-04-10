@@ -141,22 +141,22 @@ elif choice == "🤝 Lending":
         else: st.error("Not enough money!")
 
 elif choice == "📊 History":
-    st.subheader("Your Transaction History")
-    st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
-    st.divider()
-        st.subheader("🗑️ Delete Transaction")
-        # Let the user pick a transaction by its index
-        if not user_log.empty:
-            target = st.selectbox("Select entry to remove:", user_log.index, 
-                                 format_func=lambda x: f"{user_log.loc[x, 'Date']} - {user_log.loc[x, 'Product']}")
+    st.subheader("Your Activity")
+    # Make sure these lines all start at the same vertical level
+    if not user_log.empty:
+        st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
+        
+        st.divider()
+        st.subheader("🗑️ Delete Transaction") # <--- CHECK THIS LINE
+        
+        # This dropdown must also be indented inside the 'if'
+        target = st.selectbox("Select entry to remove:", user_log.index)
+        
+        if st.button("Delete Selected"):
+            new_df = log_df.drop(target)
+            new_df.to_csv(LOG_FILE, index=False)
+            st.rerun()
             
-            if st.button("Delete Selected"):
-                # Drop the row and update the CSV
-                new_df = log_df.drop(target)
-                new_df.to_csv(LOG_FILE, index=False)
-                st.success("Deleted! Refreshing...")
-                st.rerun()
-
 # --- ADMIN FEATURES ---
 elif choice == "🛠️ SUPERADMIN SPACE":
     t1, t2, t3 = st.tabs(["👥 Registered Users", "📈 Global Activity", "🍱 Set Canteen Menu"])
