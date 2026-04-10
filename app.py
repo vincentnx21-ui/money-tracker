@@ -19,10 +19,14 @@ def load_data(file, default_cols):
     if os.path.exists(file):
         try:
             df = pd.read_csv(file, dtype=str)
+            # CHECK EVERY COLUMN
             for col in default_cols:
-                if col not in df.columns: df[col] = "N/A"
+                if col not in df.columns:
+                    # If it's a price field, set it to "0", otherwise "N/A"
+                    df[col] = "0" if "Price" in col or "Total" in col else "N/A"
             return df
-        except: return pd.DataFrame(columns=default_cols)
+        except: 
+            return pd.DataFrame(columns=default_cols)
     return pd.DataFrame(columns=default_cols)
 
 user_df = load_data(USER_FILE, ["Username", "Password"])
