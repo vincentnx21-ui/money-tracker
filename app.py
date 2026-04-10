@@ -147,7 +147,7 @@ elif choice == "📊 History":
         st.dataframe(user_log[user_log["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
         
         st.divider()
-        st.subheader("🗑️ Delete Transaction") # <--- CHECK THIS LINE
+    st.subheader("🗑️ Delete Transaction") # <--- CHECK THIS LINE
         
         # This dropdown must also be indented inside the 'if'
         target = st.selectbox("Select entry to remove:", user_log.index)
