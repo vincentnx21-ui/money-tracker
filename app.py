@@ -158,16 +158,6 @@ elif choice == "📊 History":
 # --- ADMIN FEATURES ---
 elif choice == "🛠️ SUPERADMIN SPACE":
     t1, t2, t3 = st.tabs(["👥 Registered Users", "📈 Global Activity", "🍱 Set Canteen Menu"])
-st.write("---")
-        st.subheader("🗑️ Remove Menu Item")
-        m_items = log_df[log_df["Type"] == "MenuSetup"]
-        if not m_items.empty:
-            m_target = st.selectbox("Select food to remove:", m_items.index,
-                                   format_func=lambda x: f"{m_items.loc[x, 'Stall']} - {m_items.loc[x, 'Product']}")
-            if st.button("Delete Item from Canteen"):
-                new_log = log_df.drop(m_target)
-                new_log.to_csv(LOG_FILE, index=False)
-                st.rerun()
     
     with t1:
         st.write("### User Database (Plain Text Passwords)")
@@ -178,6 +168,26 @@ st.write("---")
         st.dataframe(log_df[log_df["Type"] != "MenuSetup"].iloc[::-1], use_container_width=True)
         
     with t3:
+        # --- DELETE MENU SECTION ---
+        st.subheader("🗑️ Remove Menu Item")
+        m_items = log_df[log_df["Type"] == "MenuSetup"]
+        if not m_items.empty:
+            m_target = st.selectbox(
+                "Select food to remove:", 
+                m_items.index,
+                format_func=lambda x: f"{m_items.loc[x, 'Stall']} - {m_items.loc[x, 'Product']}"
+            )
+            if st.button("Delete Item from Canteen"):
+                new_log = log_df.drop(m_target)
+                new_log.to_csv(LOG_FILE, index=False)
+                st.success("Item removed!")
+                st.rerun()
+        else:
+            st.info("No menu items to delete.")
+            
+        st.divider()
+        
+        # --- ADD MENU SECTION ---
         st.write("### Update Menu Settings")
         with st.form("menu_form"):
             c1, c2 = st.columns(2)
@@ -188,4 +198,14 @@ st.write("---")
             b_p = st.number_input("Base Price", min_value=0.0)
             e_p = st.number_input("Extras Price", min_value=0.0)
             if st.form_submit_button("Add to System"):
-                pd.DataFrame([{"Date": "MASTER", "User": "ADMIN", "Location": loc, "Stall": stl, "Product": prd, "Extras": ext, "Price": str(b_p), "Extra_Price": str(e_p), "Total": "0", "Wallet_Left": "0", "Type": "MenuSetup", "Note": "N/A"}]).to_csv(LOG_FILE, mode='a', index=False); st.rerun()
+                if loc and prd:
+                    new_item = pd.DataFrame([{
+                        "Date": "MASTER", "User": "ADMIN", "Location": loc, "Stall": stl, 
+                        "Product": prd, "Extras": ext, "Price": str(b_p), "Extra_Price": str(e_p), 
+                        "Total": "0", "Wallet_Left": "0", "Type": "MenuSetup", "Note": "N/A"
+                    }])
+                    new_item.to_csv(LOG_FILE, mode='a', index=False)
+                    st.success("Added!")
+                    st.rerun()
+                else:
+                    st.error("Please enter a Location and Product Name.")
